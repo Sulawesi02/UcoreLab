@@ -71,7 +71,7 @@ if (++ticks % TICK_NUM == 0) {
 
 在中断处理完毕后，`stval`和`scause`的值不再有意义。因为它们只是记录了中断发生时的错误信息，而一旦中断处理完毕，这些信息就不需要恢复到原来的状态。
 #### 扩展练习Challenge3：完善异常中断
-编程完善在触发一条非法指令异常`mret`和，在 `kern/trap/trap.c`的异常处理函数中捕获，并对其进行处理，简单输出异常类型和异常指令触发地址，即“Illegal instruction caught at 0x(地址)”，“ebreak caught at 0x（地址）”与“Exception type:Illegal instruction"，“Exception type: breakpoint”。
+编程完善在触发一条非法指令异常`mret`和断点异常`ebreak`，在 `kern/trap/trap.c`的异常处理函数中捕获，并对其进行处理，简单输出异常类型和异常指令触发地址，即“Illegal instruction caught at 0x(地址)”，“ebreak caught at 0x（地址）”与“Exception type:Illegal instruction"，“Exception type: breakpoint”。
 
 答：修改代码：
 ```
