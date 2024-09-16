@@ -26,11 +26,14 @@ int kern_init(void) {
 
     // grade_backtrace();
 
+    //trap.h的函数，初始化中断
     idt_init();  // init interrupt descriptor table
 
     // rdtime in mbare mode crashes
+    //clock.h的函数，初始化时钟中断
     clock_init();  // init clock interrupt
 
+    //intr.h的函数，使能中断
     intr_enable();  // enable irq interrupt
     
     while (1)

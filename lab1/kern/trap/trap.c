@@ -28,8 +28,13 @@ void idt_init(void) {
     extern void __alltraps(void);
     /* Set sscratch register to 0, indicating to exception vector that we are
      * presently executing in the kernel */
+    //约定：若中断前处于S态，sscratch为0
+    //若中断前处于U态，sscratch存储内核栈地址
+    //那么之后就可以通过sscratch的数值判断是内核态产生的中断还是用户态产生的中断
+    //我们现在是内核态所以给sscratch置零
     write_csr(sscratch, 0);
     /* Set the exception vector address */
+    //我们保证__alltraps的地址是四字节对齐的，将__alltraps这个符号的地址直接写到stvec寄存器
     write_csr(stvec, &__alltraps);
 }
 
@@ -112,6 +117,12 @@ void interrupt_handler(struct trapframe *tf) {
              *(3)当计数器加到100的时候，我们会输出一个`100ticks`表示我们触发了100次时钟中断，同时打印次数（num）加一
             * (4)判断打印次数，当打印次数为10时，调用<sbi.h>中的关机函数关机
             */
+            clock_set_next_event();//发生这次时钟中断的时候，我们要设置下一次时钟中断
+            if (++ticks % TICK_NUM == 0) {
+                print_ticks();
+                if(++num == 10)
+                    sbi_shutdown();
+            }
             break;
         case IRQ_H_TIMER:
             cprintf("Hypervisor software interrupt\n");
@@ -183,6 +194,7 @@ void exception_handler(struct trapframe *tf) {
 
 /* trap_dispatch - dispatch based on what type of trap occurred */
 static inline void trap_dispatch(struct trapframe *tf) {
+    //scause的最高位是1，说明trap是由中断引起的
     if ((intptr_t)tf->cause < 0) {
         // interrupts
         interrupt_handler(tf);
