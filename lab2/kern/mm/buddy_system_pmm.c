@@ -33,7 +33,7 @@ buddy_system_init_memmap(struct Page *base, size_t n) {
     SetPageProperty(base);// 标记 base 这个块为空闲块 
     nr_free += n;// 更新空闲页计数器
     if (list_empty(&free_list)) {
-        // 将这个大块加入到 free_list 中
+        // 将这个空闲块插入到 free_list 中
         list_add(&free_list, &(base->page_link));
     } else {
         list_entry_t* le = &free_list;
@@ -99,7 +99,7 @@ buddy_system_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
     n = round_up_pow2(n);// 将请求的块大小调整为大于等于 n 的最小的 2 的幂次方
     
-    // 遍历要释放的每个页, 将其标记为未使用, 并将页面引用计数清零
+    // 遍历该块的每个页, 将其标记为未使用, 并将页面引用计数清零
     struct Page *p = base;
     for (; p != base + n; p ++) {
         assert(!PageReserved(p) && !PageProperty(p));
@@ -126,15 +126,15 @@ buddy_system_free_pages(struct Page *base, size_t n) {
         }
     }
 
-    // 向前和向后循环合并块
-    int merged = 1;  // 标志变量，用于判断是否进行了合并
+    // 向前向后循环，尝试合并相邻的空闲块
+    int merged = 1;  // 标记是否进行了合并
     while (merged) {
         merged = 0;
         // 检查前一块是否可以合并
         list_entry_t* le = list_prev(&(base->page_link));
         if (le != &free_list) {
             p = le2page(le, page_link);
-            if (p + p->property == base && p->property == base->property) {
+            if (p + p->property == base && p->property == base->property) {// 前一空闲块和当前块大小相同
                 p->property += base->property;
                 ClearPageProperty(base);
                 list_del(&(base->page_link));
@@ -147,7 +147,7 @@ buddy_system_free_pages(struct Page *base, size_t n) {
         le = list_next(&(base->page_link));
         if (le != &free_list) {
             p = le2page(le, page_link);
-            if (base + base->property == p && base->property == p->property) {
+            if (base + base->property == p && base->property == p->property) {// 当前块和后一空闲块大小相同
                 base->property += p->property;
                 ClearPageProperty(p);
                 list_del(&(p->page_link));
@@ -164,85 +164,17 @@ buddy_system_nr_free_pages(void) {
 
 static void
 basic_check(void) {
-    struct Page *p0, *p1, *p2;
-    p0 = p1 = p2 = NULL;
-
-    // 测试 alloc_page 分配功能
-    assert((p0 = alloc_page()) != NULL);
-    assert((p1 = alloc_page()) != NULL);
-    assert((p2 = alloc_page()) != NULL);
-
-    // 确保分配的页是不同的
-    assert(p0 != p1 && p0 != p2 && p1 != p2);
-    // 确保分配页的引用计数为 0
-    assert(page_ref(p0) == 0 && page_ref(p1) == 0 && page_ref(p2) == 0);
-
-    // 确保分配的页地址在物理内存范围内
-    assert(page2pa(p0) < npage * PGSIZE);
-    assert(page2pa(p1) < npage * PGSIZE);
-    assert(page2pa(p2) < npage * PGSIZE);
-
-    // 暂存当前的空闲链表状态
-    list_entry_t free_list_store = free_list;
-    list_init(&free_list);
-    assert(list_empty(&free_list));
-
-    unsigned int nr_free_store = nr_free;
-    nr_free = 0;
-
-    // 空闲链表为空时，分配应该返回 NULL
-    assert(alloc_page() == NULL);
-
-    // 释放之前分配的页面
-    free_page(p0);
-    free_page(p1);
-    free_page(p2);
-    assert(nr_free == 3);
-
-    // 再次分配，确保可以重新获得刚刚释放的页面
-    assert((p0 = alloc_page()) != NULL);
-    assert((p1 = alloc_page()) != NULL);
-    assert((p2 = alloc_page()) != NULL);
-
-    // 再次分配失败，因为没有剩余的空闲页
-    assert(alloc_page() == NULL);
-
-    // 测试单页释放后的行为
-    free_page(p0);
-    assert(!list_empty(&free_list)); // 释放后链表不应为空
-
-    struct Page *p;
-    // 再次分配应该得到 p0
-    assert((p = alloc_page()) == p0);
-    assert(alloc_page() == NULL);
-
-    // 测试空闲页数
-    assert(nr_free == 0);
-    free_list = free_list_store;
-    nr_free = nr_free_store;
-
-    // 恢复之前的空闲链表
-    free_page(p);
-    free_page(p1);
-    free_page(p2);
-}
-
-// LAB2: below code is used to check the first fit allocation algorithm
-// NOTICE: You SHOULD NOT CHANGE basic_check, buddy_system_check functions!
-static void
-buddy_system_check(void) {
+    cprintf("=============================基础测试开始=============================\n");
     int count = 0, total = 0;
     list_entry_t *le = &free_list;
 
-    // 计算当前空闲块数目
+    // 计算当前空闲块数目和空闲页数目
     while ((le = list_next(le)) != &free_list) {
         struct Page *p = le2page(le, page_link);
         assert(PageProperty(p));
         count ++, total += p->property;
     }
     assert(total == nr_free_pages());
-
-    // basic_check();
 
     cprintf("空闲块数目为: %d\n", count);
     cprintf("空闲页数目为: %d\n", nr_free);
@@ -267,6 +199,16 @@ buddy_system_check(void) {
     assert(p2 != NULL);
     assert(!PageProperty(p2));
     cprintf("空闲页数目为: %d\n", nr_free);
+
+    // 确保分配的页是不同的
+    assert(p0 != p1 && p0 != p2 && p1 != p2);
+    // 确保分配页的引用计数为 0
+    assert(page_ref(p0) == 0 && page_ref(p1) == 0 && page_ref(p2) == 0);
+
+    // 确保分配的页地址在物理内存范围内
+    assert(page2pa(p0) < npage * PGSIZE);
+    assert(page2pa(p1) < npage * PGSIZE);
+    assert(page2pa(p2) < npage * PGSIZE);
 
     // 释放 p0
     free_pages(p0, 7);
@@ -304,6 +246,158 @@ buddy_system_check(void) {
     cprintf("释放p2后，空闲块数目为: %d\n", count);
     cprintf("释放p2后，空闲页数目为: %d\n", total);
 
+    // 清空空闲页，再尝试分配内存块
+    unsigned int nr_free_store = nr_free;// 暂存当前的空闲页数目
+    cprintf("清空空闲页！\n");
+    nr_free = 0;
+    // p3 请求 28 页
+    cprintf("p4请求28页\n");
+    struct Page *p3 = alloc_pages(28);
+    assert(p3 == NULL);
+    cprintf("分配失败，空闲页数目为: %d\n", nr_free);
+
+    nr_free = nr_free_store;
+
+    // // 暂存当前的空闲链表状态
+    // list_entry_t free_list_store = free_list;
+    // list_init(&free_list);
+    // assert(list_empty(&free_list));
+
+    // // 暂存当前的空闲页数目
+    // unsigned int nr_free_store = nr_free;
+    // nr_free = 0;
+
+    // // 空闲链表为空时，分配应该返回 NULL
+    // assert(alloc_page() == NULL);
+
+    // // 释放之前分配的页面
+    // free_page(p0);
+    // free_page(p1);
+    // free_page(p2);
+    // assert(nr_free == 3);
+
+    // // 再次分配，确保可以重新获得刚刚释放的页面
+    // assert((p0 = alloc_page()) != NULL);
+    // assert((p1 = alloc_page()) != NULL);
+    // assert((p2 = alloc_page()) != NULL);
+
+    // // 再次分配失败，因为没有剩余的空闲页
+    // assert(alloc_page() == NULL);
+
+    // // 测试单页释放后的行为
+    // free_page(p0);
+    // assert(!list_empty(&free_list)); // 释放后链表不应为空
+
+    // struct Page *p;
+    // // 再次分配应该得到 p0
+    // assert((p = alloc_page()) == p0);
+    // assert(alloc_page() == NULL);
+
+    // // 测试空闲页数
+    // assert(nr_free == 0);
+    // free_list = free_list_store;
+    // nr_free = nr_free_store;
+
+    // // 恢复之前的空闲链表
+    // free_page(p);
+    // free_page(p1);
+    // free_page(p2);
+    cprintf("=============================基础测试完毕=============================\n");
+
+}
+
+// LAB2: below code is used to check the first fit allocation algorithm
+// NOTICE: You SHOULD NOT CHANGE basic_check, buddy_system_check functions!
+static void
+buddy_system_check(void) {
+    basic_check();
+
+    cprintf("=============================复杂测试开始=============================\n");
+    int count = 0, total = 0;
+    list_entry_t *le = &free_list;
+
+    // 计算当前空闲块数目和空闲页数目
+    while ((le = list_next(le)) != &free_list) {
+        struct Page *p = le2page(le, page_link);
+        assert(PageProperty(p));
+        count ++, total += p->property;
+    }
+    assert(total == nr_free_pages());
+
+    cprintf("空闲块数目为: %d\n", count);
+    cprintf("空闲页数目为: %d\n", nr_free);
+
+    // Step 1: 多次分配和释放，确保伙伴系统正常工作
+    cprintf("-----------------------------Step 1: 多次分配和释放-------------------\n");
+    struct Page *p0 = alloc_pages(32);  // 请求 32 页
+    cprintf("p0请求32页，空闲页数目为: %d\n", nr_free);
+    struct Page *p1 = alloc_pages(16);  // 请求 16 页
+    cprintf("p1请求16页，空闲页数目为: %d\n", nr_free);
+    struct Page *p2 = alloc_pages(8);   // 请求 8 页
+    cprintf("p2请求8页，空闲页数目为: %d\n", nr_free);
+    assert(p0 != NULL && p1 != NULL && p2 != NULL);
+    assert(!PageProperty(p0) && !PageProperty(p1) && !PageProperty(p2));
+
+    free_pages(p0, 32);  // 释放 32 页
+    cprintf("释放 32 页成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p1, 16);  // 释放 16 页
+    cprintf("释放 16 页成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p2, 8);   // 释放 8 页
+    cprintf("释放 8 页成功，空闲页数目为: %d\n", nr_free);
+
+    // Step 2: 边界条件测试 - 分配最大可用块
+    cprintf("-----------------------------Step 2: 边界条件测试 - 分配最大可用块-----\n");
+    struct Page *p3 = alloc_pages(MAX_INIT_PAGES);  // 请求最大块 16384 页
+    assert(p3 != NULL);
+    assert(!PageProperty(p3));
+    cprintf("分配最大块成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p3, MAX_INIT_PAGES);  // 释放最大块
+    cprintf("释放最大块成功，空闲页数目为: %d\n", nr_free);
+
+    // Step 3: 边界条件测试 - 超出可用块请求
+    cprintf("-----------------------------Step 3: 边界条件测试 - 超出可用块请求-----\n");
+    struct Page *p4 = alloc_pages(MAX_INIT_PAGES + 1);  // 请求超过最大块
+    assert(p4 == NULL);
+    cprintf("分配超过最大块失败，空闲页数目为: %d\n", nr_free);
+
+    // Step 4: 随机分配和释放测试
+    cprintf("-----------------------------Step 4: 随机分配和释放测试---------------\n");
+    struct Page *p5 = alloc_pages(3);   // 请求 3 页
+    cprintf("p5请求32页，空闲页数目为: %d\n", nr_free);
+    struct Page *p6 = alloc_pages(5);   // 请求 5 页
+    cprintf("p6请求32页，空闲页数目为: %d\n", nr_free);
+    struct Page *p7 = alloc_pages(7);   // 请求 7 页
+    cprintf("p7请求32页，空闲页数目为: %d\n", nr_free);
+    struct Page *p8 = alloc_pages(9);   // 请求 9 页
+    cprintf("p8请求32页，空闲页数目为: %d\n", nr_free);
+    assert(p5 != NULL && p6 != NULL && p7 != NULL && p8 != NULL);
+    assert(!PageProperty(p5) && !PageProperty(p6) && !PageProperty(p7) && !PageProperty(p8));
+
+    free_pages(p6, 5);   // 释放 5 页
+    cprintf("释放 5 页成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p8, 9);   // 释放 9 页
+    cprintf("释放 9 页成功，空闲页数目为: %d\n", nr_free);
+
+    // 再次分配测试
+    cprintf("重新分配测试\n");
+    p6 = alloc_pages(5);  // 重新分配 5 页
+    cprintf("p6请求32页，空闲页数目为: %d\n", nr_free);
+    p8 = alloc_pages(9);  // 重新分配 9 页
+    assert(p6 != NULL && p8 != NULL);
+    cprintf("p8请求32页，空闲页数目为: %d\n", nr_free);
+    cprintf("重新分配 5, 9 页成功，空闲页数目为: %d\n", nr_free);
+
+    // 释放所有剩余的块
+    free_pages(p5, 3);
+    cprintf("释放 3 页成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p6, 5);
+    cprintf("释放 5 页成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p7, 7);
+    cprintf("释放 7 页成功，空闲页数目为: %d\n", nr_free);
+    free_pages(p8, 9);
+    cprintf("释放 9 页成功，空闲页数目为: %d\n", nr_free);
+
+    cprintf("=============================复杂测试完毕=============================\n");
     // struct Page *p0 = alloc_pages(5), *p1, *p2;
     // assert(p0 != NULL);
     // assert(!PageProperty(p0));
