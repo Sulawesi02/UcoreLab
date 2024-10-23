@@ -1,21 +1,59 @@
-#include <pmm.h>
-#include <list.h>
-#include <string.h>
-#include <stdio.h>
-#include <buddy_system_pmm.h>
+## 1. 概述
 
-free_area_t free_area;
+Buddy System（伙伴系统）是一种内存管理算法，它通过将内存分割成大小为2的幂次方的块来管理内存。这种算法特别适用于那些需要频繁分配和释放不同大小内存块的系统。该算法通过分裂和合并内存块的方式处理内存分配和释放，保证内存碎片化程度较低，并且能够在内存不足的情况下迅速找到合适大小的块。
+## 2. 设计目标
 
-#define free_list (free_area.free_list)
-#define nr_free (free_area.nr_free)
-#define MAX_INIT_PAGES (1 << 14)  // 2^14 = 16384 页
-
+- 实现初始化函数，配置系统中的初始内存块。
+- 实现内存分配和释放的核心算法，并确保能处理不同大小的内存请求。
+- 支持内存块的合并与分裂操作。
+- 提供充足的测试用例来验证算法的正确性。
+## 3.数据结构
+### 3.1 Page 结构体
+```
+struct Page {
+    int ref;                        // 页框的引用计数
+    uint64_t flags;                 // 描述页框状态的 64 位标志数组
+    unsigned int property;          // 表示块的大小（空闲块的数量）
+    list_entry_t page_link;         // 双向链表指针，用于将这个 Page 链接到空闲列表
+};
+```
+`Page`结构体表示一个物理页面，其中`property`字段用于表示页面的大小，`page_link`用于将页面链接到空闲块链表中。
+### 3.2 free_area_t
+```
+typedef struct {
+    list_entry_t free_list;         // 空闲块链表的头
+    unsigned int nr_free;           // 空闲页的数量
+} free_area_t;
+```
+`free_area_t`结构体使用双向链表 `free_list` 来维护空闲块，通过 `nr_free` 记录空闲页的数量。
+## 4.宏定义
+```
+#define MAX_INIT_PAGES (1 << 14)  // 2^14 = 16384 页
+```
+调用`cprintf`函数直接打印`nr_free`空闲页数目，我们发现值为31929，但显然不是一个2的幂次方项，所以我们调整最大空闲页数为常量$2^{14} = 16384$
+## 5.算法实现
+### 辅助函数
+```
+static size_t round_up_pow2(size_t n) {
+    size_t size = 1;
+    while (size < n) {
+        size <<= 1;
+    }
+    return size;
+}
+```
+用于将输入的 `n` 向上取整到最接近的 2 的幂次方。
+### 5.1初始化
+```
 static void
 buddy_system_init(void) {
     list_init(&free_list);
     nr_free = 0;
 }
-
+```
+用于初始化空闲块链表和空闲页数。
+### 5.2初始化内存映射
+```
 static void
 buddy_system_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
@@ -48,15 +86,12 @@ buddy_system_init_memmap(struct Page *base, size_t n) {
         }
     }
 }
+```
+用于将指定基地址和页面数的内存块初始化为一个大的空闲块，并将其插入到 `free_list` 链表中。
 
-static size_t round_up_pow2(size_t n) {
-    size_t size = 1;
-    while (size < n) {
-        size <<= 1;
-    }
-    return size;
-}
-
+在这个过程中，我们会手动限制最大分配的页数为 16384 页。
+### 5.3内存分配
+```
 static struct Page *
 buddy_system_alloc_pages(size_t n) {
     assert(n > 0);
@@ -93,7 +128,14 @@ buddy_system_alloc_pages(size_t n) {
     }
     return page;
 }
+```
+用于分配指定基地址和页面数的内存块。
 
+- 将页面数向上取整到最接近的 2 的幂次方
+- 遍历空闲块链表，找到第一个块大小大于等于调整后的页面数的空闲块
+- 如果空闲块的大小大于请求的大小，则将该块分裂为两个块，直到空闲块的大小等于调整后的页面数。
+### 5.4内存释放
+```
 static void
 buddy_system_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
@@ -126,7 +168,7 @@ buddy_system_free_pages(struct Page *base, size_t n) {
         }
     }
 
-    // 向前向后循环，尝试合并相邻的空闲块
+    // 向前向后循环，尝试合并空闲块
     int merged = 1;  // 标记是否进行了合并
     while (merged) {
         merged = 0;
@@ -156,12 +198,33 @@ buddy_system_free_pages(struct Page *base, size_t n) {
         }
     }
 }
+```
+用于释放指定基地址和页面数的内存块。
 
-static size_t
-buddy_system_nr_free_pages(void) {
-    return nr_free;
-}
+- 同样将页面数向上取整到最接近的 2 的幂次方，然后将释放的内存块标记为未使用，并将页面引用计数清零。
+- 将 base 插入到空闲块链表中。
+- 向前向后循环，尝试合并相邻的空闲块。如果当前块和前一空闲块或后一空闲块大小相同，就继续合并；否则，退出合并。
+## 6. 接口
+```
+const struct pmm_manager buddy_system_pmm_manager = {
+    .name = "buddy_system_pmm_manager",
+    .init = buddy_system_init,
+    .init_memmap = buddy_system_init_memmap,
+    .alloc_pages = buddy_system_alloc_pages,
+    .free_pages = buddy_system_free_pages,
+    .nr_free_pages = buddy_system_nr_free_pages,
+    .check = buddy_system_check,
+};
+```
+提供给系统的接口，包括初始化、内存分配、内存释放、获取空闲页数和检查算法正确性。
+## 7.测试样例
+### 7.1基础测试
+- 连续请求分配大小为7页、14页、21页的块，buddy_system会为其分配大小为8页、16页、32页的块。
+- 释放大小为7页、14页、21页的块，buddy_system会在其基地址上释放大小为8页、16页、32页的块，并尝试合并能合并的空闲块。
+- 清空空闲页计数，再尝试分配内存块，显示分配失败，空闲页数目为:0。
 
+测试代码如下：
+```
 static void
 basic_check(void) {
     cprintf("=============================基础测试开始=============================\n");
@@ -259,54 +322,39 @@ basic_check(void) {
     nr_free = nr_free_store;
 
     cprintf("=============================基础测试完毕=============================\n");
-    // // 暂存当前的空闲链表状态
-    // list_entry_t free_list_store = free_list;
-    // list_init(&free_list);
-    // assert(list_empty(&free_list));
-
-    // // 暂存当前的空闲页数目
-    // unsigned int nr_free_store = nr_free;
-    // nr_free = 0;
-
-    // // 空闲链表为空时，分配应该返回 NULL
-    // assert(alloc_page() == NULL);
-
-    // // 释放之前分配的页面
-    // free_page(p0);
-    // free_page(p1);
-    // free_page(p2);
-    // assert(nr_free == 3);
-
-    // // 再次分配，确保可以重新获得刚刚释放的页面
-    // assert((p0 = alloc_page()) != NULL);
-    // assert((p1 = alloc_page()) != NULL);
-    // assert((p2 = alloc_page()) != NULL);
-
-    // // 再次分配失败，因为没有剩余的空闲页
-    // assert(alloc_page() == NULL);
-
-    // // 测试单页释放后的行为
-    // free_page(p0);
-    // assert(!list_empty(&free_list)); // 释放后链表不应为空
-
-    // struct Page *p;
-    // // 再次分配应该得到 p0
-    // assert((p = alloc_page()) == p0);
-    // assert(alloc_page() == NULL);
-
-    // // 测试空闲页数
-    // assert(nr_free == 0);
-    // free_list = free_list_store;
-    // nr_free = nr_free_store;
-
-    // // 恢复之前的空闲链表
-    // free_page(p);
-    // free_page(p1);
-    // free_page(p2);
 }
+```
 
-// LAB2: below code is used to check the first fit allocation algorithm
-// NOTICE: You SHOULD NOT CHANGE basic_check, buddy_system_check functions!
+测试结果如下：
+```
+=============================基础测试开始=============================
+空闲块数目为: 1
+空闲页数目为: 16384
+p0请求7页
+空闲页数目为: 16376
+p1请求14页
+空闲页数目为: 16360
+p2请求21页
+空闲页数目为: 16328
+释放p0后，空闲块数目为: 9
+释放p0后，空闲页数目为: 16336
+释放p1后，空闲块数目为: 9
+释放p1后，空闲页数目为: 16352
+释放p2后，空闲块数目为: 1
+释放p2后，空闲页数目为: 16384
+清空空闲页！
+p4请求28页
+分配失败，空闲页数目为: 0
+=============================基础测试完毕=============================
+```
+### 7.2复杂测试
+- Step 2：连续请求分配大小为32、16、8 页的块，再释放它们，检查伙伴系统能否正确处理链表。
+- Step 3：测试分配最大可用块，确保系统在极端情况下可以正常分配。
+- Step 4：尝试分配超过系统容量的块，确保在这种情况下，系统会返回 NULL。
+- Step 5：随机分配多个小块，并随机释放部分块，随后重新分配，验证伙伴系统能否高效管理内存碎片。
+
+测试代码如下：
+```
 static void
 buddy_system_check(void) {
     basic_check();
@@ -397,63 +445,39 @@ buddy_system_check(void) {
     cprintf("释放 9 页成功，空闲页数目为: %d\n", nr_free);
 
     cprintf("=============================复杂测试完毕=============================\n");
-    // struct Page *p0 = alloc_pages(5), *p1, *p2;
-    // assert(p0 != NULL);
-    // assert(!PageProperty(p0));
-
-    // list_entry_t free_list_store = free_list;
-    // list_init(&free_list);
-    // assert(list_empty(&free_list));
-    // assert(alloc_page() == NULL);
-
-    // unsigned int nr_free_store = nr_free;
-    // nr_free = 0;
-
-    // free_pages(p0 + 2, 3);
-    // assert(alloc_pages(4) == NULL);
-    // assert(PageProperty(p0 + 2) && p0[2].property == 3);
-    // assert((p1 = alloc_pages(3)) != NULL);
-    // assert(alloc_page() == NULL);
-    // assert(p0 + 2 == p1);
-
-    // p2 = p0 + 1;
-    // free_page(p0);
-    // free_pages(p1, 3);
-    // assert(PageProperty(p0) && p0->property == 1);
-    // assert(PageProperty(p1) && p1->property == 3);
-
-    // assert((p0 = alloc_page()) == p2 - 1);
-    // free_page(p0);
-    // assert((p0 = alloc_pages(2)) == p2 + 1);
-
-    // free_pages(p0, 2);
-    // free_page(p2);
-
-    // assert((p0 = alloc_pages(5)) != NULL);
-    // assert(alloc_page() == NULL);
-
-    // assert(nr_free == 0);
-    // nr_free = nr_free_store;
-
-    // free_list = free_list_store;
-    // free_pages(p0, 5);
-
-    // le = &free_list;
-    // while ((le = list_next(le)) != &free_list) {
-    //     struct Page *p = le2page(le, page_link);
-    //     count --, total -= p->property;
-    // }
-    // assert(count == 0);
-    // assert(total == 0);
 }
-//这个结构体在
-const struct pmm_manager buddy_system_pmm_manager = {
-    .name = "buddy_system_pmm_manager",
-    .init = buddy_system_init,
-    .init_memmap = buddy_system_init_memmap,
-    .alloc_pages = buddy_system_alloc_pages,
-    .free_pages = buddy_system_free_pages,
-    .nr_free_pages = buddy_system_nr_free_pages,
-    .check = buddy_system_check,
-};
-
+```
+测试结果如下：
+```
+=============================复杂测试开始=============================
+空闲块数目为: 1
+空闲页数目为: 16384
+-----------------------------Step 1: 多次分配和释放-------------------
+p0请求32页，空闲页数目为: 16352
+p1请求16页，空闲页数目为: 16336
+p2请求8页，空闲页数目为: 16328
+释放 32 页成功，空闲页数目为: 16360
+释放 16 页成功，空闲页数目为: 16376
+释放 8 页成功，空闲页数目为: 16384
+-----------------------------Step 2: 边界条件测试 - 分配最大可用块-----
+分配最大块成功，空闲页数目为: 0
+释放最大块成功，空闲页数目为: 16384
+-----------------------------Step 3: 边界条件测试 - 超出可用块请求-----
+分配超过最大块失败，空闲页数目为: 16384
+-----------------------------Step 4: 随机分配和释放测试---------------
+p5请求32页，空闲页数目为: 16380
+p6请求32页，空闲页数目为: 16372
+p7请求32页，空闲页数目为: 16364
+p8请求32页，空闲页数目为: 16348
+释放 5 页成功，空闲页数目为: 16356
+释放 9 页成功，空闲页数目为: 16372
+重新分配测试
+p6请求32页，空闲页数目为: 16364
+p8请求32页，空闲页数目为: 16348
+重新分配 5, 9 页成功，空闲页数目为: 16348
+释放 3 页成功，空闲页数目为: 16352
+释放 5 页成功，空闲页数目为: 16360
+释放 7 页成功，空闲页数目为: 16368
+释放 9 页成功，空闲页数目为: 16384
+=============================复杂测试完毕=============================
+```
