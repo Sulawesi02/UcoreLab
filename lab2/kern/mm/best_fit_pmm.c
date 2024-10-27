@@ -154,9 +154,10 @@ best_fit_free_pages(struct Page *base, size_t n) {
     /*LAB2 EXERCISE 2: 2213408*/ 
     // 编写代码
     // 具体来说就是设置当前页块的属性为释放的页块数、并将当前页块标记为已分配状态、最后增加nr_free的值
-    base->property = n;
-    SetPageProperty(base);
-    nr_free += n;
+    base->property = n;           // 设置基页的属性为n（总页数）
+    SetPageProperty(base);        // 将基页标记为已设置属性
+    nr_free += n;                // 更新可用页数
+    
     // 如果自由链表为空，直接将base添加到自由链表
     if (list_empty(&free_list)) {
         list_add(&free_list, &(base->page_link));
