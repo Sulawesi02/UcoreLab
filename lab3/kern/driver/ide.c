@@ -9,9 +9,9 @@
 
 void ide_init(void) {}
 
-#define MAX_IDE 2
-#define MAX_DISK_NSECS 56
-static char ide[MAX_DISK_NSECS * SECTSIZE];
+#define MAX_IDE 2 // 最大 IDE 磁盘数
+#define MAX_DISK_NSECS 56 // 最大磁盘扇区数
+static char ide[MAX_DISK_NSECS * SECTSIZE]; // 硬盘存储空间，大小为`56*512`
 
 bool ide_device_valid(unsigned short ideno) { return ideno < MAX_IDE; }
 

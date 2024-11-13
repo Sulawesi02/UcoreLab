@@ -16,7 +16,7 @@
 
 #define MAX_SWAP_OFFSET_LIMIT                   (1 << 24)
 
-extern size_t max_swap_offset;
+extern size_t max_swap_offset; // 交换空间（模拟硬盘用于页面置换的区域）的最大偏移量为56 / (4096 / 512) = 7
 
 /* *
  * swap_offset - takes a swap_entry (saved in pte), and returns
