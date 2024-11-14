@@ -34,22 +34,22 @@ kern_entry:
     jr t0
 
 .section .data
-    # .align 2^12
+    # .align 2^12  PGSHIFT是//kern/mm/mmu.h中定义的宏，等于12，表示2^12 = 4KB(页)对齐
     .align PGSHIFT
     .global bootstack
-bootstack:
-    .space KSTACKSIZE
+bootstack:     # 启动栈
+    .space KSTACKSIZE     # 分配了一块大小为 `KSTACKSIZE`字节的内存作为内核的启动栈
     .global bootstacktop
 bootstacktop:
 
 .section .data
-    # 由于我们要把这个页表放到一个页里面，因此必须 12 位对齐
+    # 由于我们要把这个页表放到一个页里面，因此必须 12 位对齐，2^12 = 4096 = 4KB
     .align PGSHIFT
     .global boot_page_table_sv39
 # 分配 4KiB 内存给预设的三级页表
-boot_page_table_sv39:
+boot_page_table_sv39:     # 三级页表
     # 0xffffffff_c0000000 map to 0x80000000 (1G)
     # 前 511 个页表项均设置为 0 ，因此 V=0 ，意味着是空的(unmapped)
     .zero 8 * 511
-    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1
+    # 设置最后一个页表项，映射 1 GiB 的大页，PPN=0x80000，映射到物理地址0x20000000，标志位 VRWXAD 均为 1
     .quad (0x80000 << 10) | 0xcf # VRWXAD
