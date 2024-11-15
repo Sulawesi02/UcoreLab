@@ -47,7 +47,8 @@ struct swap_manager
      /* Try to swap out a page, return then victim */
      int (*swap_out_victim) (struct mm_struct *mm, struct Page **ptr_page, int in_tick);
      /* check the page relpacement algorithm */
-     int (*check_swap)(void);     
+     int (*check_swap)(void);  
+     int (*update_swaplist) (struct mm_struct *mm, struct Page *page);   
 };
 
 extern volatile int swap_init_ok;
