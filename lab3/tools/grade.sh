@@ -397,7 +397,7 @@ quick_check 'check vmm'                                                 \
     'BEGIN check_swap: count 2, total 31661'                            \
 
 pts=20
-quick_check 'check swap page fault'                                     \
+quick_check ''                                     \
     'setup Page Table for vaddr 0X1000, so alloc a page'                \
     'setup Page Table vaddr 0~4MB OVER!'                                \
     'set up init env for check_swap begin!'                             \
