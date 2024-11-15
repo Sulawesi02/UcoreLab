@@ -401,11 +401,22 @@ do_pgfault(struct mm_struct *mm, uint_t error_code, uintptr_t addr) {
             //(1）According to the mm AND addr, try
             //to load the content of right disk page
             //into the memory which page managed.
+             // 将物理页换入到内存中
+            ret = swap_in(mm, addr, &page);
+            if (ret != 0) {
+                cprintf("swap_in in do_pgfault failed\n");
+                goto failed;
+            }
             //(2) According to the mm,
             //addr AND page, setup the
             //map of phy addr <--->
             //logical addr
+            // 将物理页与虚拟页建立映射关系
+            page_insert(mm->pgdir, page, addr, perm); 
             //(3) make the page swappable.
+            // 设置当前的物理页为可交换的
+            swap_map_swappable(mm, addr, page, 1);
+            // 同时在物理页中维护其对应到的虚拟页的信息
             page->pra_vaddr = addr;
         } else {
             cprintf("no swap_init_ok but ptep is %x, failed\n", *ptep);
