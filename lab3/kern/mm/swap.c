@@ -2,6 +2,7 @@
 #include <swapfs.h>
 #include <swap_fifo.h>
 #include <swap_clock.h>
+#include <swap_lru.h>
 #include <stdio.h>
 #include <string.h>
 #include <memlayout.h>
@@ -39,7 +40,7 @@ swap_init(void)
         panic("bad max_swap_offset %08x.\n", max_swap_offset);
      }
 
-     sm = &swap_manager_clock;//use first in first out Page Replacement Algorithm
+     sm = &swap_manager_lru;//use first in first out Page Replacement Algorithm
      int r = sm->init();
      
      if (r == 0)
@@ -159,6 +160,18 @@ check_content_set(void)
      assert(pgfault_num==4);
 }
 
+
+
+static inline void
+check_content_set_fixed(pde_t* pgdir,struct mm_struct *mm, uintptr_t la, uintptr_t value){
+     *(unsigned char *)la = value;
+     pte_t *ptep = get_pte(pgdir, la, 0);
+     struct Page *page = pte2page(*ptep);
+     sm->update_swaplist(mm, page);
+}
+
+
+
 static inline int
 check_content_access(void)
 {
@@ -277,4 +290,65 @@ check_swap(void)
      //assert(count == 0);
      
      cprintf("check_swap() succeeded!\n");
+     
+     // cprintf("set up init env for check_swap begin!\n");
+
+     // pgfault_num=0;
+
+     // check_content_set_fixed(pgdir, mm, 0x1000, 0x0a);
+     // assert(pgfault_num==1);
+     // check_content_set_fixed(pgdir, mm, 0x1010, 0x0a);
+     // assert(pgfault_num==1);
+     // check_content_set_fixed(pgdir, mm, 0x2000, 0x0b);
+     // assert(pgfault_num==2);
+     // check_content_set_fixed(pgdir, mm, 0x2010, 0x0b);
+     // assert(pgfault_num==2);
+     // check_content_set_fixed(pgdir, mm, 0x3000, 0x0c);
+     // assert(pgfault_num==3);
+     // check_content_set_fixed(pgdir, mm, 0x3010, 0x0c);
+     // assert(pgfault_num==3);
+     // check_content_set_fixed(pgdir, mm, 0x4000, 0x0d);
+     // assert(pgfault_num==4);
+     // //（链头/队尾）4000-3000-2000-1000（链尾/队头）
+     // check_content_set_fixed(pgdir, mm, 0x4010, 0x0d);
+     // assert(pgfault_num==4);
+     // //（链头/队尾）4000-3000-2000-1000（链尾/队头）
+     // check_content_set_fixed(pgdir, mm, 0x2010, 0x0b);
+     // assert(pgfault_num==4);
+     // //（链头/队尾）2000-4000-3000-1000（链尾/队头）
+     // check_content_set_fixed(pgdir, mm, 0x5010, 0x0e);
+     // assert(pgfault_num==5);
+     // //（链头/队尾）5000-2000-4000-3000（链尾/队头）
+     // check_content_set_fixed(pgdir, mm, 0x1010, 0x0a);
+     // assert(pgfault_num==6);
+     // //（链头/队尾）1000-5000-2000-4000（链尾/队头）
+     // check_content_set_fixed(pgdir, mm, 0x3010, 0x0c);
+     // assert(pgfault_num==7);
+     // //（链头/队尾）3000-1000-5000-2000（链尾/队头）
+
+
+     // cprintf("set up init env for check_swap over!\n");
+     
+     // //restore kernel mem env
+     // for (i=0;i<CHECK_VALID_PHY_PAGE_NUM;i++) {
+     //     free_pages(check_rp[i],1);
+     // } 
+
+     // //free_page(pte2page(*temp_ptep));
+     
+     // mm_destroy(mm);
+         
+     // nr_free = nr_free_store;
+     // free_list = free_list_store;
+
+     
+     // le = &free_list;
+     // while ((le = list_next(le)) != &free_list) {
+     //     struct Page *p = le2page(le, page_link);
+     //     count --, total -= p->property;
+     // }
+     // cprintf("count is %d, total is %d\n",count,total);
+     // //assert(count == 0);
+     
+     // cprintf("check_swap() succeeded!\n");
 }
