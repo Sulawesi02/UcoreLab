@@ -86,7 +86,7 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
-    //LAB4:EXERCISE1 YOUR CODE
+    //LAB4:EXERCISE1 2212900
     /*
      * below fields in proc_struct need to be initialized
      *       enum proc_state state;                      // Process state
@@ -102,6 +102,18 @@ alloc_proc(void) {
      *       uint32_t flags;                             // Process flag
      *       char name[PROC_NAME_LEN + 1];               // Process name
      */
+    proc->state = PROC_UNINIT;// 初始化进程状态为新建状态
+    proc->pid = -1;// 初始化进程 ID，通常由全局变量或计数器生成,-1表示尚未分配PID
+    proc->runs = 0;// 初始化运行次数为0
+    proc->kstack = 0;
+    proc->need_resched = 0;
+    proc->parent = NULL;
+    proc->mm = NULL;
+    memset(&(proc->context), 0, sizeof(struct context));// 初始化上下文结构，清空寄存器值
+    proc->tf = NULL;// 初始化陷阱帧为空
+    proc->cr3 = boot_cr3;
+    proc->flags = 0;
+    memset(proc->name, 0, PROC_NAME_LEN + 1);
 
 
     }
@@ -163,7 +175,7 @@ get_pid(void) {
 void
 proc_run(struct proc_struct *proc) {
     if (proc != current) {
-        // LAB4:EXERCISE3 YOUR CODE
+        // LAB4:EXERCISE3 2212900
         /*
         * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
         * MACROs or Functions:
@@ -172,6 +184,23 @@ proc_run(struct proc_struct *proc) {
         *   lcr3():                   Modify the value of CR3 register
         *   switch_to():              Context switching between two processes
         */
+        bool intr_flag;
+        struct proc_struct *prev = current, *next = proc;
+
+        // 禁用中断，确保在上下文切换的过程中不会被中断打断。
+        local_intr_save(intr_flag);
+        {
+            // 将 current 更新为新的进程 proc，即切换当前进程。
+            current = proc;
+            // 修改 CR3 寄存器的值，CR3 存储着页目录的物理地址，指向当前进程的页表。
+            // 在切换到新进程时，必须更新 CR3，以便 CPU 使用新进程的页表进行地址映射。
+            lcr3(next->cr3);
+            // 执行上下文切换
+            // 保存当前进程的状态，恢复新进程的状态，继续执行新进程。
+            switch_to(&(prev->context), &(next->context));
+        }
+        // 恢复中断，允许中断再次发生，确保进程切换后的正常运行。
+        local_intr_restore(intr_flag);
        
     }
 }
@@ -273,7 +302,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
-    //LAB4:EXERCISE2 YOUR CODE
+    //LAB4:EXERCISE2 2212900
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
      * MACROs or Functions:
@@ -298,6 +327,32 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     //    5. insert proc_struct into hash_list && proc_list
     //    6. call wakeup_proc to make the new child process RUNNABLE
     //    7. set ret vaule using child proc's pid
+    // 1. 调用 alloc_proc 分配一个 proc_struct(PCB)
+    proc = alloc_proc();
+
+    // 2. 调用 setup_kstack 为子进程分配内核栈
+    proc->parent = current;// 设定父线程
+    setup_kstack(proc);
+
+    // 3. 调用 copy_mm 复制或共享 mm（取决于 clone_flag）
+    copy_mm(clone_flags, proc);
+
+    // 4. 调用 copy_thread 在子进程的 proc_struct 中设置 trapframe 和上下文
+    copy_thread(proc, stack, tf);
+
+    // 5. 将 proc_struct 插入到 hash_list 和 proc_list 中
+    int pid = get_pid();
+    proc->pid = pid;
+    hash_proc(proc);// 将新创建的进程插入到一个哈希表中，用于快速查找。
+    list_add(&proc_list, &(proc->list_link));// 将新进程插入全局进程链表 proc_list 中，用于顺序管理所有进程。
+    nr_process++;// 增加全局进程计数器，记录当前系统中活跃进程的总数。
+
+    // 6. 调用 wakeup_proc 将子进程状态设置为 RUNNABLE
+    wakeup_proc(proc);
+    //proc->state = PROC_RUNNABLE;
+
+    // 7. 将子进程的 pid 设置为 ret 的返回值
+    ret = proc->pid;
 
     
 
