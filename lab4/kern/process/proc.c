@@ -81,7 +81,7 @@ void kernel_thread_entry(void);
 void forkrets(struct trapframe *tf);
 void switch_to(struct context *from, struct context *to);
 
-// alloc_proc - alloc a proc_struct and init all fields of proc_struct
+// alloc_proc - 分配一个proc_struct并初始化proc_struct的所有字段
 static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
@@ -105,16 +105,16 @@ alloc_proc(void) {
      */
 
     proc->state = PROC_UNINIT;// 初始化进程状态为新建状态
-    proc->pid = -1;// 初始化进程 ID，通常由全局变量或计数器生成,-1表示尚未分配PID
-    proc->runs = 0;// 初始化运行次数为0
-    proc->kstack = 0;
-    proc->need_resched = 0;
-    proc->parent = NULL;
-    proc->mm = NULL;
+    proc->pid = -1;          // 初始化进程 ID，通常由全局变量或计数器生成,-1表示尚未分配PID
+    proc->runs = 0;          // 初始化运行次数为0
+    proc->kstack = 0;        // 初始化线程的内核栈
+    proc->need_resched = 0;  // 重新调度布尔值
+    proc->parent = NULL;     // 父进程
+    proc->mm = NULL;         // 内存管理
     memset(&(proc->context), 0, sizeof(struct context));// 初始化上下文结构，清空寄存器值
-    proc->tf = NULL;// 初始化陷阱帧为空
-    proc->cr3 = boot_cr3;
-    proc->flags = 0;
+    proc->tf = NULL;         // 初始化陷阱帧为空
+    proc->cr3 = boot_cr3;    // CR3寄存器：页目录表PDT的基址
+    proc->flags = 0;         // 进程标志
     memset(proc->name, 0, PROC_NAME_LEN + 1);
     }
     return proc;
@@ -237,16 +237,26 @@ find_proc(int pid) {
 // kernel_thread - create a kernel thread using "fn" function
 // NOTE: the contents of temp trapframe tf will be copied to 
 //       proc->tf in do_fork-->copy_thread function
+
+// kernel_thread 函数的意义在于封装和定制，为创建内核线程提供一个简化和特定用途的接口。
+// kernel_thread 函数通过调用 do_fork 函数最终完成了内核线程的创建工作
+
+// kernel_thread 是一个 特化的线程创建接口，其核心作用是：
+// （1）为内核线程的创建预设参数和上下文。
+// （2）简化调用流程，隐藏复杂的 do_fork 参数和细节。
+// （3）提供一种创建内核线程的通用方法。
 int
 kernel_thread(int (*fn)(void *), void *arg, uint32_t clone_flags) {
+    // （1）内核线程不像用户进程那样由用户态切换而来，需要内核显式设置初始上下文。
     struct trapframe tf;
     memset(&tf, 0, sizeof(struct trapframe));
-    // 设置内核线程的参数和函数指针
-    tf.gpr.s0 = (uintptr_t)fn; // s0 寄存器保存函数指针
+
+    // 初始化设置内核线程的参数和函数指针
+    tf.gpr.s0 = (uintptr_t)fn;  // s0 寄存器保存函数指针
     tf.gpr.s1 = (uintptr_t)arg; // s1 寄存器保存函数参数
 
-    // 设置 trapframe 中的 status 寄存器（SSTATUS）
-    // SSTATUS_SPP：Supervisor Previous Privilege（设置为 supervisor 模式，因为这是一个内核线程）
+    // 设置 trapframe 中的 status 寄存器（SSTATUS）:主要用于管理当前处理器上下文
+    // SSTATUS_SPP：Supervisor Previous Privilege（设置为 supervisor 管理模式，因为这是一个内核线程）
     // SSTATUS_SPIE：Supervisor Previous Interrupt Enable（设置为启用中断，因为这是一个内核线程）
     // SSTATUS_SIE：Supervisor Interrupt Enable（设置为禁用中断，因为我们不希望该线程被中断）
     tf.status = (read_csr(sstatus) | SSTATUS_SPP | SSTATUS_SPIE) & ~SSTATUS_SIE;
@@ -288,21 +298,24 @@ copy_mm(uint32_t clone_flags, struct proc_struct *proc) {
 //             - setup the kernel entry point and stack of process
 static void
 copy_thread(struct proc_struct *proc, uintptr_t esp, struct trapframe *tf) {
+    // 在上面分配的内核栈上分配出一片空间来保存trapframe
     proc->tf = (struct trapframe *)(proc->kstack + KSTACKSIZE - sizeof(struct trapframe));
     *(proc->tf) = *tf;
 
     // Set a0 to 0 so a child process knows it's just forked
+    // 将trapframe中的a0寄存器（返回值）设置为0，说明这个进程是一个子进程
     proc->tf->gpr.a0 = 0;
     proc->tf->gpr.sp = (esp == 0) ? (uintptr_t)proc->tf : esp;
 
+    // 将上下文中的ra设置为了forkret函数的入口，并且把trapframe放在上下文的栈顶
     proc->context.ra = (uintptr_t)forkret;
     proc->context.sp = (uintptr_t)(proc->tf);
 }
 
-/* do_fork -     parent process for a new child process
- * @clone_flags: used to guide how to clone the child process
- * @stack:       the parent's user stack pointer. if stack==0, It means to fork a kernel thread.
- * @tf:          the trapframe info, which will be copied to child process's proc->tf
+/* do_fork       为新子进程创建父进程
+ * @clone_flags: 用于指导如何克隆子进程的标志位
+ * @stack:       父进程的用户栈指针。如果 stack == 0，则表示创建一个内核线程。
+ * @tf:          中断帧信息，将被复制到子进程的 proc->tf 中
  */
 int
 do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
@@ -331,13 +344,21 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
 
     // 1. 调用 alloc_proc 分配一个 proc_struct(PCB)
     proc = alloc_proc();
-
+    if (proc == NULL) {
+        goto fork_out;
+    }
     // 2. 调用 setup_kstack 为子进程分配内核栈
     proc->parent = current;// 设定父线程
-    setup_kstack(proc);
+    if (setup_kstack(proc) != 0) {
+        goto bad_fork_cleanup_proc;
+    }
+
 
     // 3. 调用 copy_mm 复制或共享 mm（取决于 clone_flag）
-    copy_mm(clone_flags, proc);
+    if (copy_mm(clone_flags, proc) != 0) {
+        goto bad_fork_cleanup_kstack;
+    }
+
 
     // 4. 调用 copy_thread 在子进程的 proc_struct 中设置 trapframe 和上下文
     copy_thread(proc, stack, tf);
@@ -351,9 +372,8 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
 
     // 6. 调用 wakeup_proc 将子进程状态设置为 RUNNABLE
     wakeup_proc(proc);
-    //proc->state = PROC_RUNNABLE;
 
-    // 7. 将子进程的 pid 设置为 ret 的返回值
+    // 7. 将返回值设为字线程 id
     ret = proc->pid;
     
 
@@ -401,7 +421,7 @@ proc_init(void) {
 
     // 调用 alloc_proc 分配并初始化空闲线程 idleproc
     if ((idleproc = alloc_proc()) == NULL) {
-        //分配失败，触发panic终止程序，说明内核初始化失败。
+        // 分配失败，触发panic终止程序，说明内核初始化失败。
         panic("cannot alloc idleproc.\n");
     }
 
@@ -423,15 +443,15 @@ proc_init(void) {
 
     }
     
-    // 初始化空闲线程 idleproc
-    idleproc->pid = 0;                      // 设置进程 ID 为 0
-    idleproc->state = PROC_RUNNABLE;        // 设置状态为可运行
+    // 初始化设置空闲线程 idleproc
+    idleproc->pid = 0;                       // 设置进程 ID 为 0
+    idleproc->state = PROC_RUNNABLE;         // 设置状态为可运行
     idleproc->kstack = (uintptr_t)bootstack; // 指定内核栈指针
-    idleproc->need_resched = 1;             // 设置需要调度的标志
-    set_proc_name(idleproc, "idle");        // 设置名称为 "idle"
-    nr_process++;                           // 增加全局进程计数
+    idleproc->need_resched = 1;              // 设置需要调度的标志，schedule 函数切换其他进程
+    set_proc_name(idleproc, "idle");         // 设置名称为 "idle"
+    nr_process++;                            // 增加全局进程计数
 
-    current = idleproc;                     // 设置当前进程为 `idleproc`
+    current = idleproc;                      // 设置当前进程为 `idleproc`
 
 
     // 创建 init_main 线程
@@ -449,7 +469,7 @@ proc_init(void) {
     assert(initproc != NULL && initproc->pid == 1);
 }
 
-// cpu_idle - at the end of kern_init, the first kernel thread idleproc will do below works
+// cpu_idle - kern_init结束时，第一个内核线程 idleproc 将执行以下操作
 void
 cpu_idle(void) {
     while (1) {

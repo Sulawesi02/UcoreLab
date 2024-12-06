@@ -68,15 +68,23 @@ memset(proc->name, 0, PROC_NAME_LEN + 1);
 - `proc->parent = current;`设定父线程，使父子线程关联，提供清晰的层级结构
 - `nr_process++`插入PCB后将线程数量+1
 ```c
-// 1. 调用 alloc_proc 分配一个 proc_struct(PCB)
+    // 1. 调用 alloc_proc 分配一个 proc_struct(PCB)
     proc = alloc_proc();
-
+    if (proc == NULL) {
+        goto fork_out;
+    }
     // 2. 调用 setup_kstack 为子进程分配内核栈
     proc->parent = current;// 设定父线程
-    setup_kstack(proc);
+    if (setup_kstack(proc) != 0) {
+        goto bad_fork_cleanup_proc;
+    }
+
 
     // 3. 调用 copy_mm 复制或共享 mm（取决于 clone_flag）
-    copy_mm(clone_flags, proc);
+    if (copy_mm(clone_flags, proc) != 0) {
+        goto bad_fork_cleanup_kstack;
+    }
+
 
     // 4. 调用 copy_thread 在子进程的 proc_struct 中设置 trapframe 和上下文
     copy_thread(proc, stack, tf);
@@ -90,9 +98,8 @@ memset(proc->name, 0, PROC_NAME_LEN + 1);
 
     // 6. 调用 wakeup_proc 将子进程状态设置为 RUNNABLE
     wakeup_proc(proc);
-    //proc->state = PROC_RUNNABLE;
 
-    // 7. 将子进程的 pid 设置为 ret 的返回值
+    // 7. 将返回值设为字线程 id
     ret = proc->pid;
 ```
 
