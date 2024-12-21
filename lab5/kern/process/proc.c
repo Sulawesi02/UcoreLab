@@ -87,7 +87,7 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
-    //LAB4:EXERCISE1 YOUR CODE
+    //LAB4:EXERCISE1 2213410
     /*
      * below fields in proc_struct need to be initialized
      *       enum proc_state state;                      // Process state
@@ -110,6 +110,19 @@ alloc_proc(void) {
      *       uint32_t wait_state;                        // waiting state
      *       struct proc_struct *cptr, *yptr, *optr;     // relations between processes
      */
+
+    proc->state = PROC_UNINIT;// 初始化进程所处的状态
+    proc->pid = -1;// 初始化进程 ID，-1表示尚未分配PID
+    proc->runs = 0;// 初始化进程运行次数
+    proc->kstack = 0;// 初始化内核栈
+    proc->need_resched = 0;// 初始化进程不需要调度
+    proc->parent = NULL;// 初始化父进程
+    proc->mm = NULL;// 初始化内存管理的信息
+    memset(&(proc->context), 0, sizeof(struct context));// 初始化上下文结构，清空寄存器值
+    proc->tf = NULL;// 初始化进程的中断帧
+    proc->cr3 = boot_cr3;// 使用内核页目录表的基址
+    proc->flags = 0;
+    memset(proc->name, 0, PROC_NAME_LEN + 1);
     }
     return proc;
 }
@@ -197,7 +210,7 @@ get_pid(void) {
 void
 proc_run(struct proc_struct *proc) {
     if (proc != current) {
-        // LAB4:EXERCISE3 YOUR CODE
+        // LAB4:EXERCISE3 2213410
         /*
         * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
         * MACROs or Functions:
@@ -207,8 +220,26 @@ proc_run(struct proc_struct *proc) {
         *   switch_to():              Context switching between two processes
         */
 
+    bool intr_flag;
+    struct proc_struct *prev = current, *next = proc;
+    // 禁用中断，确保在上下文切换的过程中不会被中断打断。
+    local_intr_save(intr_flag);
+    {
+        // 将当前运行的进程设置为要切换的新进程
+        current = proc;
+        // 修改 CR3 寄存器的值，CR3 存储着页目录的物理地址，指向当前进程的页表。
+        // 在切换到新进程时，必须更新 CR3，以便 CPU 使用新进程的页表进行地址映射。
+        lcr3(next->cr3);
+        // 执行上下文切换
+        // 保存当前进程的状态，恢复新进程的状态，继续执行新进程。
+        switch_to(&(prev->context), &(next->context));
+    }
+    // 恢复中断，允许中断再次发生，确保进程切换后的正常运行。
+    local_intr_restore(intr_flag);
+    
     }
 }
+
 
 // forkret -- the first kernel entry point of a new thread/process
 // NOTE: the addr of forkret is setted in copy_thread function
@@ -369,7 +400,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
         goto fork_out;
     }
     ret = -E_NO_MEM;
-    //LAB4:EXERCISE2 YOUR CODE
+    //LAB4:EXERCISE2 2213410
     /*
      * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
      * MACROs or Functions:
@@ -388,12 +419,40 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
      */
 
     //    1. call alloc_proc to allocate a proc_struct
+    // 调用 alloc_proc 函数分配并初始化子进程控制块(PCB)
+    if((proc = alloc_proc()) == NULL)
+        goto fork_out;
+    
     //    2. call setup_kstack to allocate a kernel stack for child process
+    // 调用 setup_kstack 函数为子进程分配并初始化内核栈
+    proc->parent = current;// 设定父线程
+    if(setup_kstack(proc))
+        goto bad_fork_cleanup_kstack;
+    
     //    3. call copy_mm to dup OR share mm according clone_flag
+    // 调用 copy_mm 函数复制或共享 mm（根据 clone_flag）
+    if(copy_mm(clone_flags, proc))
+        goto bad_fork_cleanup_proc;
+    
     //    4. call copy_thread to setup tf & context in proc_struct
+    // 调用 copy_thread 函数设置子进程的中断帧和上下文
+    copy_thread(proc, stack, tf);
+    
     //    5. insert proc_struct into hash_list && proc_list
+    // 将 proc_struct 插入到 hash_list 和 proc_list 中
+    proc->pid = get_pid();
+    hash_proc(proc);// 将新创建的子进程插入到哈希链表 hash_list
+    list_add(&proc_list, &(proc->list_link));// 将新创建的子进程插入进程链表 proc_list 中
+    nr_process++;// 增加全局进程计数器，记录当前系统中活跃进程的总数。
+    
     //    6. call wakeup_proc to make the new child process RUNNABLE
+    // 调用 wakeup_proc 将子进程状态设置为 RUNNABLE
+    wakeup_proc(proc);
+    //proc->state = PROC_RUNNABLE;
+    
     //    7. set ret vaule using child proc's pid
+    // 将子进程的 pid 设置为 ret 的返回值
+    ret = proc->pid;
 
     //LAB5 YOUR CODE : (update LAB4 steps)
     //TIPS: you should modify your written code in lab4(step1 and step5), not add more code.
