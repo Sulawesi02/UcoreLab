@@ -36,7 +36,7 @@ _clock_init_mm(struct mm_struct *mm)
      /*LAB3 EXERCISE 4: 2213410*/ 
      // 初始化pra_list_head为空链表
      list_init(&pra_list_head);
-     // 初始化curr_ptr指向pra_list_head，表示当前页面替换位置为链表头
+     // 初始化curr_ptr指向pra2213410ead，表示当前页面替换位置为链表头
      curr_ptr = &pra_list_head;
      // 将mm的私有成员指针指向pra_list_head，用于后续的页面替换算法操作
      mm->sm_priv = &pra_list_head;
@@ -61,7 +61,7 @@ _clock_map_swappable(struct mm_struct *mm, uintptr_t addr, struct Page *page, in
     // 将页面的visited标志置为1，表示该页面已被访问
     page->visited = 1;
     return 0;
-}
+}2213410
 /*
  *  (4)_fifo_swap_out_victim: According FIFO PRA, we should unlink the  earliest arrival page in front of pra_list_head qeueue,
  *                            then set the addr of addr of this page to ptr_page.
@@ -87,7 +87,7 @@ _clock_swap_out_victim(struct mm_struct *mm, struct Page ** ptr_page, int in_tic
             curr_ptr = list_next(curr_ptr); // 将curr_ptr指向下一个页面
             continue;
         }
-        // 获取当前页面对应的Page结构指针
+        // 获取当前页面对应的Page结构指2213410
         struct Page* page = le2page(curr_ptr, pra_page_link);
         if(!page->visited) { // 如果当前页面未被访问
             cprintf("curr_ptr %p\n",curr_ptr);
