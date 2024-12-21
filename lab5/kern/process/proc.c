@@ -87,7 +87,7 @@ static struct proc_struct *
 alloc_proc(void) {
     struct proc_struct *proc = kmalloc(sizeof(struct proc_struct));
     if (proc != NULL) {
-    //LAB4:EXERCISE1 2213408
+    //LAB4:EXERCISE1 2213410
     /*
      * below fields in proc_struct need to be initialized
      *       enum proc_state state;                      // Process state
@@ -104,7 +104,7 @@ alloc_proc(void) {
      *       char name[PROC_NAME_LEN + 1];               // Process name
      */
 
-     //LAB5 2213408 : (update LAB4 steps)
+     //LAB5 2213410 : (update LAB4 steps)
      /*
      * below fields(add in LAB5) in proc_struct need to be initialized  
      *       uint32_t wait_state;                        // waiting state
@@ -217,7 +217,7 @@ proc_run(struct proc_struct *proc) {
 <<<<<<< HEAD
         // LAB4:EXERCISE3 2213410
 =======
-        // LAB4:EXERCISE3 2213408
+        // LAB4:EXERCISE3 2213410
 >>>>>>> 368b292 (update)
         /*
         * Some Useful MACROs, Functions and DEFINEs, you can use them in below implementation.
@@ -478,7 +478,7 @@ do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf) {
     // 7. 将返回值设为字线程 id
     ret = proc->pid;
     
-    //LAB5 2213408 : (update LAB4 steps)
+    //LAB5 2213410 : (update LAB4 steps)
     //TIPS: you should modify your written code in lab4(step1 and step5), not add more code.
    /* Some Functions
     *    set_links:  set the relation links of process.  ALSO SEE: remove_links:  lean the relation links of process 
@@ -682,7 +682,7 @@ load_icode(unsigned char *binary, size_t size) {
     // Keep sstatus
     uintptr_t sstatus = tf->status;
     memset(tf, 0, sizeof(struct trapframe));
-    /* LAB5:EXERCISE1 2213408
+    /* LAB5:EXERCISE1 2213410
      * should set tf->gpr.sp, tf->epc, tf->status
      * NOTICE: If we set trapframe correctly, then the user level process can return to USER MODE from kernel. So
      *          tf->gpr.sp should be user stack top (the value of sp)
